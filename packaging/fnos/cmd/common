@@ -1,0 +1,434 @@
+#!/bin/bash
+
+fnmonitor_app_name() {
+    echo "${TRIM_APPNAME:-fnmonitor}"
+}
+
+fnmonitor_app_dir() {
+    local app_name
+    app_name="$(fnmonitor_app_name)"
+    echo "${TRIM_APPDEST:-/var/apps/${app_name}/target}"
+}
+
+fnmonitor_data_dir() {
+    local app_name
+    app_name="$(fnmonitor_app_name)"
+    echo "${TRIM_PKGVAR:-/var/apps/${app_name}/var}"
+}
+
+fnmonitor_log_file() {
+    local data_dir app_name
+    data_dir="$(fnmonitor_data_dir)"
+    app_name="$(fnmonitor_app_name)"
+    echo "${data_dir}/${app_name}.log"
+}
+
+fnmonitor_test_result_file() {
+    local data_dir
+    data_dir="$(fnmonitor_data_dir)"
+    echo "${data_dir}/last-notification-test.log"
+}
+
+fnmonitor_pid_file() {
+    local data_dir app_name
+    data_dir="$(fnmonitor_data_dir)"
+    app_name="$(fnmonitor_app_name)"
+    echo "${data_dir}/${app_name}.pid"
+}
+
+fnmonitor_config_file() {
+    local data_dir
+    data_dir="$(fnmonitor_data_dir)"
+    echo "${data_dir}/config.yaml"
+}
+
+fnmonitor_port() {
+    echo "${wizard_port:-${FNMONITOR_PORT:-__PORT__}}"
+}
+
+fnmonitor_yaml_quote() {
+    printf '"%s"' "$(printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
+fnmonitor_bool() {
+    case "${1:-false}" in
+        true|TRUE|True|1|yes|YES|on|ON) echo "true" ;;
+        *) echo "false" ;;
+    esac
+}
+
+fnmonitor_csv_to_yaml_list() {
+    local raw item trimmed
+    raw="${1:-}"
+    if [ -z "${raw}" ]; then
+        echo "        - admin@example.com"
+        return
+    fi
+    printf '%s' "${raw}" | tr ',' '\n' | while IFS= read -r item || [ -n "${item}" ]; do
+        trimmed="$(printf '%s' "${item}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+        [ -n "${trimmed}" ] || continue
+        printf '        - %s\n' "$(fnmonitor_yaml_quote "${trimmed}")"
+    done
+}
+
+fnmonitor_prepare_data_dir() {
+    local data_dir
+    data_dir="$(fnmonitor_data_dir)"
+    mkdir -p "${data_dir}"
+}
+
+fnmonitor_ensure_config_file() {
+    local app_dir config_file
+    app_dir="$(fnmonitor_app_dir)"
+    config_file="$(fnmonitor_config_file)"
+    fnmonitor_prepare_data_dir
+    if [ ! -f "${config_file}" ]; then
+        cp "${app_dir}/config.yaml" "${config_file}"
+    fi
+}
+
+fnmonitor_patch_config_port() {
+    local config_file port
+    config_file="$1"
+    port="$(fnmonitor_port)"
+    [ -f "${config_file}" ] || return 0
+    sed -i "s/listen: \":[0-9][0-9]*\"/listen: \":${port}\"/" "${config_file}"
+}
+
+fnmonitor_patch_ui_port() {
+    local port app_name path
+    port="$(fnmonitor_port)"
+    app_name="$(fnmonitor_app_name)"
+    for path in \
+        "/var/apps/${app_name}/ui/config" \
+        "/var/apps/${app_name}/target/ui/config" \
+        "$(fnmonitor_app_dir)/ui/config"; do
+        [ -f "${path}" ] || continue
+        sed -i "s/\"port\": \"[0-9][0-9]*\"/\"port\": \"${port}\"/" "${path}"
+    done
+}
+
+fnmonitor_patch_port_forward() {
+    local port app_name path
+    port="$(fnmonitor_port)"
+    app_name="$(fnmonitor_app_name)"
+    for path in \
+        "/var/apps/${app_name}/etc/${app_name}.sc" \
+        "/var/apps/${app_name}/etc/fnmonitor.sc" \
+        "$(fnmonitor_app_dir)/../etc/${app_name}.sc" \
+        "$(fnmonitor_app_dir)/../etc/fnmonitor.sc"; do
+        [ -f "${path}" ] || continue
+        sed -i "s/src\.ports=\"[0-9][0-9]*\/tcp\"/src.ports=\"${port}\/tcp\"/" "${path}"
+        sed -i "s/dst\.ports=\"[0-9][0-9]*\/tcp\"/dst.ports=\"${port}\/tcp\"/" "${path}"
+    done
+}
+
+fnmonitor_set_section_key() {
+    local file section key value tmp
+    file="$1"
+    section="$2"
+    key="$3"
+    value="$4"
+    tmp="${file}.tmp"
+    awk -v section="${section}" -v key="${key}" -v value="${value}" '
+        /^[^[:space:]][^:]*:/ {
+            if (in_section && !updated) {
+                print "  " key ": " value
+                updated = 1
+            }
+            in_section = ($1 == section ":")
+        }
+        in_section && $1 == key ":" {
+            $0 = "  " key ": " value
+            updated = 1
+        }
+        { print }
+        END {
+            if (in_section && !updated) {
+                print "  " key ": " value
+            }
+        }
+    ' "${file}" > "${tmp}" && mv "${tmp}" "${file}"
+}
+
+fnmonitor_set_threshold() {
+    fnmonitor_set_section_key "$1" "thresholds" "$2" "$3"
+}
+
+fnmonitor_set_stdout_key() {
+    local file key value tmp
+    file="$1"
+    key="$2"
+    value="$3"
+    tmp="${file}.tmp"
+    awk -v key="${key}" -v value="${value}" '
+        /^notify:/ { in_notify=1 }
+        /^[^[:space:]][^:]*:/ && $1 != "notify:" { in_notify=0; in_stdout=0 }
+        in_notify && /^    stdout:/ { in_stdout=1; print; next }
+        in_notify && /^    [a-zA-Z0-9_]+:/ && $1 != "stdout:" { in_stdout=0 }
+        in_stdout && $1 == key ":" { $0 = "      " key ": " value }
+        { print }
+    ' "${file}" > "${tmp}" && mv "${tmp}" "${file}"
+}
+
+fnmonitor_set_fnos_email_key() {
+    local file key value tmp
+    file="$1"
+    key="$2"
+    value="$3"
+    tmp="${file}.tmp"
+    awk -v key="${key}" -v value="${value}" '
+        /^notify:/ { in_notify=1 }
+        /^[^[:space:]][^:]*:/ && $1 != "notify:" { in_notify=0; in_channel=0 }
+        in_notify && /^    fnos_email:/ { in_channel=1; print; next }
+        in_notify && /^    [a-zA-Z0-9_]+:/ && $1 != "fnos_email:" { in_channel=0 }
+        in_channel && $1 == key ":" { $0 = "      " key ": " value }
+        { print }
+    ' "${file}" > "${tmp}" && mv "${tmp}" "${file}"
+}
+
+fnmonitor_set_smtp_config() {
+    local file tmp to_yaml smtp_security smtp_port smtp_start_tls smtp_tls
+    file="$1"
+    tmp="${file}.tmp"
+    to_yaml="$(fnmonitor_csv_to_yaml_list "${wizard_smtp_to:-}")"
+    smtp_security="${wizard_smtp_security:-}"
+    smtp_port="${wizard_smtp_port:-587}"
+    case "${smtp_security}" in
+        ssl_465|ssl|tls|implicit_tls)
+            if [ -z "${wizard_smtp_port:-}" ] || [ "${wizard_smtp_port:-}" = "587" ]; then
+                smtp_port="465"
+            fi
+            smtp_start_tls="false"
+            smtp_tls="true"
+            ;;
+        starttls_587|starttls)
+            if [ -z "${wizard_smtp_port:-}" ]; then
+                smtp_port="587"
+            fi
+            smtp_start_tls="true"
+            smtp_tls="false"
+            ;;
+        none|plain)
+            if [ -z "${wizard_smtp_port:-}" ]; then
+                smtp_port="25"
+            fi
+            smtp_start_tls="false"
+            smtp_tls="false"
+            ;;
+        *)
+            smtp_start_tls="$(fnmonitor_bool "${wizard_smtp_start_tls:-true}")"
+            smtp_tls="$(fnmonitor_bool "${wizard_smtp_tls:-false}")"
+            ;;
+    esac
+    awk \
+        -v smtp_enabled="$(fnmonitor_bool "${wizard_smtp_enabled:-false}")" \
+        -v smtp_host="$(fnmonitor_yaml_quote "${wizard_smtp_host:-smtp.example.com}")" \
+        -v smtp_port="${smtp_port}" \
+        -v smtp_username="$(fnmonitor_yaml_quote "${wizard_smtp_username:-monitor@example.com}")" \
+        -v smtp_password="$(fnmonitor_yaml_quote "${wizard_smtp_password:-}")" \
+        -v smtp_from="$(fnmonitor_yaml_quote "${wizard_smtp_from:-monitor@example.com}")" \
+        -v smtp_from_name="$(fnmonitor_yaml_quote "${wizard_smtp_from_name:-fnmonitor}")" \
+        -v smtp_start_tls="${smtp_start_tls}" \
+        -v smtp_tls="${smtp_tls}" \
+        -v to_yaml="${to_yaml}" \
+        -v has_password="${wizard_smtp_password:+yes}" '
+        /^notify:/ { in_notify=1 }
+        /^[^[:space:]][^:]*:/ && $1 != "notify:" { in_notify=0; in_smtp=0 }
+        in_notify && /^    smtp:/ { in_smtp=1; print; next }
+        in_notify && /^    [a-zA-Z0-9_]+:/ && $1 != "smtp:" { in_smtp=0 }
+        in_smtp && skip_to && /^        -/ { next }
+        in_smtp && skip_to && !/^        -/ { skip_to=0 }
+        in_smtp && $1 == "enabled:" { $0 = "      enabled: " smtp_enabled }
+        in_smtp && $1 == "host:" { $0 = "      host: " smtp_host }
+        in_smtp && $1 == "port:" { $0 = "      port: " smtp_port }
+        in_smtp && $1 == "username:" { $0 = "      username: " smtp_username }
+        in_smtp && $1 == "password:" && has_password == "yes" { $0 = "      password: " smtp_password }
+        in_smtp && $1 == "from:" { $0 = "      from: " smtp_from }
+        in_smtp && $1 == "from_name:" { $0 = "      from_name: " smtp_from_name; from_name_seen=1 }
+        in_smtp && $1 == "to:" && !from_name_seen { print "      from_name: " smtp_from_name; from_name_seen=1 }
+        in_smtp && $1 == "to:" { print "      to:"; print to_yaml; skip_to=1; next }
+        in_smtp && $1 == "start_tls:" { $0 = "      start_tls: " smtp_start_tls }
+        in_smtp && $1 == "tls:" { $0 = "      tls: " smtp_tls }
+        { print }
+    ' "${file}" > "${tmp}" && mv "${tmp}" "${file}"
+}
+
+fnmonitor_set_webhook_config() {
+    local file tmp
+    file="$1"
+    tmp="${file}.tmp"
+    awk \
+        -v webhook_enabled="$(fnmonitor_bool "${wizard_webhook_enabled:-false}")" \
+        -v webhook_url="$(fnmonitor_yaml_quote "${wizard_webhook_url:-https://example.com/notify}")" \
+        -v webhook_method="$(fnmonitor_yaml_quote "${wizard_webhook_method:-POST}")" '
+        /^notify:/ { in_notify=1 }
+        /^[^[:space:]][^:]*:/ && $1 != "notify:" { in_notify=0; in_webhook=0 }
+        in_notify && /^    webhook:/ { in_webhook=1; print; next }
+        in_notify && /^    [a-zA-Z0-9_]+:/ && $1 != "webhook:" { in_webhook=0 }
+        in_webhook && $1 == "enabled:" { $0 = "      enabled: " webhook_enabled }
+        in_webhook && $1 == "url:" { $0 = "      url: " webhook_url }
+        in_webhook && $1 == "method:" { $0 = "      method: " webhook_method }
+        { print }
+    ' "${file}" > "${tmp}" && mv "${tmp}" "${file}"
+}
+
+fnmonitor_install_config() {
+    local config_file
+    config_file="$(fnmonitor_config_file)"
+    fnmonitor_ensure_config_file
+    fnmonitor_patch_config_port "${config_file}"
+    fnmonitor_patch_ui_port
+    fnmonitor_patch_port_forward
+}
+
+fnmonitor_apply_wizard_config_to_file() {
+    local config_file
+    config_file="$1"
+
+    [ -n "${wizard_port:-}" ] && fnmonitor_patch_config_port "${config_file}"
+    [ -n "${wizard_collect_interval:-}" ] && fnmonitor_set_section_key "${config_file}" "collect" "interval" "${wizard_collect_interval}"
+    [ -n "${wizard_notify_cooldown:-}" ] && fnmonitor_set_section_key "${config_file}" "collect" "notify_cooldown" "${wizard_notify_cooldown}"
+
+    [ -n "${wizard_cpu_percent:-}" ] && fnmonitor_set_threshold "${config_file}" "cpu_percent" "${wizard_cpu_percent}"
+    [ -n "${wizard_memory_percent:-}" ] && fnmonitor_set_threshold "${config_file}" "memory_percent" "${wizard_memory_percent}"
+    [ -n "${wizard_swap_percent:-}" ] && fnmonitor_set_threshold "${config_file}" "swap_percent" "${wizard_swap_percent}"
+    [ -n "${wizard_disk_percent:-}" ] && fnmonitor_set_threshold "${config_file}" "disk_percent" "${wizard_disk_percent}"
+    [ -n "${wizard_temperature_c:-}" ] && fnmonitor_set_threshold "${config_file}" "temperature_c" "${wizard_temperature_c}"
+    [ -n "${wizard_process_count:-}" ] && fnmonitor_set_threshold "${config_file}" "process_count" "${wizard_process_count}"
+    [ -n "${wizard_log_match_count:-}" ] && fnmonitor_set_threshold "${config_file}" "log_match_count" "${wizard_log_match_count}"
+    [ -n "${wizard_log_notify_min_level:-}" ] && fnmonitor_set_section_key "${config_file}" "logs" "notify_min_level" "$(fnmonitor_yaml_quote "${wizard_log_notify_min_level}")"
+
+    [ -n "${wizard_stdout_enabled:-}" ] && fnmonitor_set_stdout_key "${config_file}" "enabled" "$(fnmonitor_bool "${wizard_stdout_enabled}")"
+
+    fnmonitor_set_smtp_config "${config_file}"
+    fnmonitor_set_webhook_config "${config_file}"
+
+    [ -n "${wizard_fnos_email_enabled:-}" ] && fnmonitor_set_fnos_email_key "${config_file}" "enabled" "$(fnmonitor_bool "${wizard_fnos_email_enabled}")"
+    [ -n "${wizard_fnos_email_mode:-}" ] && fnmonitor_set_fnos_email_key "${config_file}" "mode" "$(fnmonitor_yaml_quote "${wizard_fnos_email_mode}")"
+    [ -n "${wizard_fnos_email_command:-}" ] && fnmonitor_set_fnos_email_key "${config_file}" "command" "$(fnmonitor_yaml_quote "${wizard_fnos_email_command}")"
+    [ -n "${wizard_fnos_email_http_url:-}" ] && fnmonitor_set_fnos_email_key "${config_file}" "http_url" "$(fnmonitor_yaml_quote "${wizard_fnos_email_http_url}")"
+    return 0
+}
+
+fnmonitor_apply_wizard_config() {
+    local config_file
+    config_file="$(fnmonitor_config_file)"
+    fnmonitor_install_config
+    fnmonitor_apply_wizard_config_to_file "${config_file}"
+
+    fnmonitor_patch_ui_port
+    fnmonitor_patch_port_forward
+}
+
+fnmonitor_channel_enabled() {
+    local config_file channel
+    config_file="$1"
+    channel="$2"
+    awk -v channel="${channel}" '
+        /^notify:/ { in_notify=1; next }
+        /^[^[:space:]][^:]*:/ && $1 != "notify:" { in_notify=0; in_channels=0; in_channel=0 }
+        in_notify && /^  channels:/ { in_channels=1; next }
+        in_channels && $1 == channel ":" { in_channel=1; next }
+        in_channels && /^    [a-zA-Z0-9_]+:/ && $1 != channel ":" { in_channel=0 }
+        in_channel && $1 == "enabled:" {
+            value=$2
+            gsub(/[" \t]/, "", value)
+            if (value ~ /^(true|TRUE|True|1|yes|YES|on|ON)$/) {
+                found=1
+            }
+        }
+        END { exit found ? 0 : 1 }
+    ' "${config_file}"
+}
+
+fnmonitor_has_external_notification_channel() {
+    local config_file
+    config_file="$1"
+    fnmonitor_channel_enabled "${config_file}" "smtp" ||
+        fnmonitor_channel_enabled "${config_file}" "webhook" ||
+        fnmonitor_channel_enabled "${config_file}" "fnos_email"
+}
+
+fnmonitor_external_notification_config() {
+    local config_file
+    config_file="$1"
+    awk '
+        /^notify:/ { in_notify=1; next }
+        /^[^[:space:]][^:]*:/ && $1 != "notify:" { in_notify=0; in_channels=0; in_channel=0 }
+        in_notify && /^  channels:/ { in_channels=1; next }
+        in_channels && /^    (smtp|webhook|fnos_email):/ { in_channel=1; print; next }
+        in_channels && /^    [a-zA-Z0-9_]+:/ { in_channel=0 }
+        in_channel { print }
+    ' "${config_file}"
+}
+
+fnmonitor_external_notification_config_changed() {
+    local old_file new_file old_tmp new_tmp
+    old_file="$1"
+    new_file="$2"
+    old_tmp="$(mktemp)"
+    new_tmp="$(mktemp)"
+    fnmonitor_external_notification_config "${old_file}" > "${old_tmp}"
+    fnmonitor_external_notification_config "${new_file}" > "${new_tmp}"
+    if cmp -s "${old_tmp}" "${new_tmp}"; then
+        rm -f "${old_tmp}" "${new_tmp}"
+        return 1
+    fi
+    rm -f "${old_tmp}" "${new_tmp}"
+    return 0
+}
+
+fnmonitor_send_test_notification() {
+    local app_dir config_file log_file result_file output message
+    app_dir="$(fnmonitor_app_dir)"
+    config_file="${1:-$(fnmonitor_config_file)}"
+    log_file="$(fnmonitor_log_file)"
+    result_file="$(fnmonitor_test_result_file)"
+    if [ "$#" -eq 0 ]; then
+        fnmonitor_install_config
+    fi
+
+    if [ ! -x "${app_dir}/fnmonitor" ]; then
+        message="测试通知失败，配置已保存。失败原因：fnmonitor binary not found: ${app_dir}/fnmonitor"
+        printf '%s\n' "${message}" >> "${log_file}"
+        printf '%s\n' "${message}" > "${result_file}"
+        if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+            printf '%s\n' "${message}" > "${TRIM_TEMP_LOGFILE}"
+        fi
+        printf '%s\n' "${message}" >&2
+        return 1
+    fi
+
+    output="$("${app_dir}/fnmonitor" -config "${config_file}" -test-notify 2>&1)" || {
+        message="测试通知失败，配置已保存。失败原因如下："
+        printf '%s\n%s\n' "${message}" "${output}" >> "${log_file}"
+        printf '%s\n%s\n' "${message}" "${output}" > "${result_file}"
+        if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+            printf '%s\n%s\n' "${message}" "${output}" > "${TRIM_TEMP_LOGFILE}"
+        fi
+        printf '%s\n%s\n' "${message}" "${output}" >&2
+        return 1
+    }
+    printf '%s\n' "${output}" >> "${log_file}"
+    printf '测试通知成功。\n%s\n' "${output}" > "${result_file}"
+    printf '%s\n' "${output}"
+}
+
+fnmonitor_is_running() {
+    local pid_file pid
+    pid_file="$(fnmonitor_pid_file)"
+    [ -f "${pid_file}" ] || return 1
+    pid="$(cat "${pid_file}" 2>/dev/null || true)"
+    [ -n "${pid}" ] || return 1
+    kill -0 "${pid}" 2>/dev/null
+}
+
+fnmonitor_guard_data_dir() {
+    local data_dir
+    data_dir="$(fnmonitor_data_dir)"
+    case "${data_dir}" in
+        /vol*|/usr/local/apps/@appdata/*|/var/apps/*/var) return 0 ;;
+        *) echo "Refuse to remove unsafe data dir: ${data_dir}" >&2; return 1 ;;
+    esac
+}

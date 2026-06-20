@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/common"
+
+if [ "${wizard_delete_data:-false}" = "true" ]; then
+    fnmonitor_guard_data_dir
+    find "$(fnmonitor_data_dir)" -mindepth 1 -delete
+fi
+exit 0

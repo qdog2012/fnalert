@@ -1,0 +1,145 @@
+[
+    {
+        "stepTitle": "服务",
+        "items": [
+            {
+                "type": "tips",
+                "helpText": "原生配置表单不支持单独测试按钮。只有 SMTP、Webhook 或飞牛邮件适配器配置发生变化时，保存后才会发送测试通知；测试失败不会阻止保存，失败原因会写入应用日志和 last-notification-test.log。应用设置页仍提供独立「发送测试通知」按钮。"
+            },
+            {
+                "type": "text",
+                "field": "wizard_port",
+                "label": "Web 端口",
+                "initValue": "__PORT__",
+                "rules": [
+                    { "required": true, "message": "请输入 Web 端口" },
+                    { "pattern": "^[0-9]+$", "message": "端口必须是数字" }
+                ]
+            },
+            {
+                "type": "text",
+                "field": "wizard_collect_interval",
+                "label": "采集间隔",
+                "initValue": "30s",
+                "rules": [
+                    { "required": true, "message": "请输入采集间隔，例如 30s、1m" },
+                    { "pattern": "^[0-9]+(s|m|h)$", "message": "格式示例：30s、1m、1h" }
+                ]
+            },
+            {
+                "type": "text",
+                "field": "wizard_notify_cooldown",
+                "label": "通知冷却",
+                "initValue": "10m",
+                "rules": [
+                    { "required": true, "message": "请输入通知冷却时间，例如 10m" },
+                    { "pattern": "^[0-9]+(s|m|h)$", "message": "格式示例：30s、10m、1h" }
+                ]
+            }
+        ]
+    },
+    {
+        "stepTitle": "告警阈值",
+        "items": [
+            { "type": "text", "field": "wizard_cpu_percent", "label": "CPU 使用率 %", "initValue": "90", "rules": [{ "pattern": "^[0-9]+(\\.[0-9]+)?$", "message": "请输入数字" }] },
+            { "type": "text", "field": "wizard_memory_percent", "label": "内存使用率 %", "initValue": "90", "rules": [{ "pattern": "^[0-9]+(\\.[0-9]+)?$", "message": "请输入数字" }] },
+            { "type": "text", "field": "wizard_swap_percent", "label": "Swap 使用率 %", "initValue": "98", "rules": [{ "pattern": "^[0-9]+(\\.[0-9]+)?$", "message": "请输入数字；设置为 0 可关闭 Swap 告警" }] },
+            { "type": "text", "field": "wizard_disk_percent", "label": "磁盘使用率 %", "initValue": "85", "rules": [{ "pattern": "^[0-9]+(\\.[0-9]+)?$", "message": "请输入数字" }] },
+            { "type": "text", "field": "wizard_temperature_c", "label": "温度 °C", "initValue": "75", "rules": [{ "pattern": "^[0-9]+(\\.[0-9]+)?$", "message": "请输入数字" }] },
+            { "type": "text", "field": "wizard_process_count", "label": "进程数量", "initValue": "1200", "rules": [{ "pattern": "^[0-9]+$", "message": "请输入整数" }] },
+            {
+                "type": "radio",
+                "field": "wizard_log_notify_min_level",
+                "label": "系统日志过滤级别",
+                "initValue": "warning",
+                "options": [
+                    { "label": "全部日志", "value": "info" },
+                    { "label": "警告及以上", "value": "warning" },
+                    { "label": "错误及以上", "value": "error" },
+                    { "label": "严重错误", "value": "critical" },
+                    { "label": "关闭日志告警", "value": "none" }
+                ]
+            },
+            { "type": "text", "field": "wizard_log_match_count", "label": "日志告警触发条数", "initValue": "1", "rules": [{ "pattern": "^[0-9]+$", "message": "请输入整数" }] },
+            { "type": "tips", "helpText": "每次采集发现达到过滤级别的日志数量达到该值就触发告警。默认 1 表示发现 1 条就通知；设置为 0 也可关闭日志触发通知。重复通知仍受“通知冷却”限制。" }
+        ]
+    },
+    {
+        "stepTitle": "SMTP 通知",
+        "items": [
+            {
+                "type": "radio",
+                "field": "wizard_smtp_enabled",
+                "label": "启用 SMTP",
+                "initValue": "false",
+                "options": [
+                    { "label": "关闭", "value": "false" },
+                    { "label": "开启", "value": "true" }
+                ]
+            },
+            { "type": "text", "field": "wizard_smtp_host", "label": "SMTP 服务器", "initValue": "smtp.example.com" },
+            {
+                "type": "radio",
+                "field": "wizard_smtp_security",
+                "label": "SMTP 加密方式",
+                "initValue": "starttls_587",
+                "options": [
+                    { "label": "STARTTLS（587）", "value": "starttls_587" },
+                    { "label": "SSL/TLS（465）", "value": "ssl_465" },
+                    { "label": "不加密", "value": "none" }
+                ]
+            },
+            { "type": "text", "field": "wizard_smtp_port", "label": "SMTP 端口", "initValue": "587", "rules": [{ "pattern": "^[0-9]+$", "message": "端口必须是数字；选择 SSL/TLS 时默认使用 465" }] },
+            { "type": "text", "field": "wizard_smtp_username", "label": "SMTP 用户名", "initValue": "monitor@example.com" },
+            { "type": "password", "field": "wizard_smtp_password", "label": "SMTP 密码", "initValue": "" },
+            { "type": "text", "field": "wizard_smtp_from", "label": "发件人", "initValue": "monitor@example.com" },
+            { "type": "text", "field": "wizard_smtp_from_name", "label": "发件人昵称", "initValue": "fnmonitor" },
+            { "type": "text", "field": "wizard_smtp_to", "label": "收件人", "initValue": "admin@example.com" }
+        ]
+    },
+    {
+        "stepTitle": "Webhook 通知",
+        "items": [
+            {
+                "type": "radio",
+                "field": "wizard_webhook_enabled",
+                "label": "启用 Webhook",
+                "initValue": "false",
+                "options": [
+                    { "label": "关闭", "value": "false" },
+                    { "label": "开启", "value": "true" }
+                ]
+            },
+            { "type": "text", "field": "wizard_webhook_url", "label": "Webhook URL", "initValue": "https://example.com/notify" },
+            { "type": "text", "field": "wizard_webhook_method", "label": "HTTP 方法", "initValue": "POST" }
+        ]
+    },
+    {
+        "stepTitle": "飞牛邮件适配器",
+        "items": [
+            {
+                "type": "radio",
+                "field": "wizard_fnos_email_enabled",
+                "label": "启用",
+                "initValue": "false",
+                "options": [
+                    { "label": "关闭", "value": "false" },
+                    { "label": "开启", "value": "true" }
+                ]
+            },
+            {
+                "type": "radio",
+                "field": "wizard_fnos_email_mode",
+                "label": "模式",
+                "initValue": "command",
+                "options": [
+                    { "label": "本机命令", "value": "command" },
+                    { "label": "HTTP 入口", "value": "http" }
+                ]
+            },
+            { "type": "text", "field": "wizard_fnos_email_command", "label": "本机命令路径", "initValue": "" },
+            { "type": "text", "field": "wizard_fnos_email_http_url", "label": "HTTP URL", "initValue": "" },
+            { "type": "tips", "helpText": "飞牛公开文档未提供稳定发送邮件 API，本机命令路径不是系统默认文件。只有确认存在可调用命令、HTTP 入口，或你自己写了转发脚本时才启用此项。" }
+        ]
+    }
+]

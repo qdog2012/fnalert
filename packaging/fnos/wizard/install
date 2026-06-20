@@ -1,0 +1,11 @@
+[
+    {
+        "stepTitle": "fnmonitor",
+        "items": [
+            {
+                "type": "tips",
+                "helpText": "fnmonitor 将以 root 权限运行，以便读取系统日志、dmesg、硬件温度和完整进程指标。安装后如需调整参数，可在编辑配置中修改。"
+            }
+        ]
+    }
+]

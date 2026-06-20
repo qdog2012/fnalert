@@ -1,0 +1,50 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/common"
+
+config_file="$(fnmonitor_config_file)"
+pending_file="${config_file}.pending"
+
+cleanup_pending() {
+    rm -f "${pending_file}"
+}
+trap cleanup_pending EXIT
+
+was_running=0
+if "${SCRIPT_DIR}/main" status >/dev/null 2>&1; then
+    was_running=1
+fi
+
+fnmonitor_ensure_config_file
+cp "${config_file}" "${pending_file}"
+fnmonitor_apply_wizard_config_to_file "${pending_file}"
+
+should_test=0
+if fnmonitor_has_external_notification_channel "${pending_file}" &&
+    fnmonitor_external_notification_config_changed "${config_file}" "${pending_file}"; then
+    should_test=1
+fi
+
+mv "${pending_file}" "${config_file}"
+fnmonitor_patch_ui_port
+fnmonitor_patch_port_forward
+
+if [ "${was_running}" = "1" ]; then
+    "${SCRIPT_DIR}/main" stop || true
+    if ! "${SCRIPT_DIR}/main" start; then
+        restart_message="配置已保存，但服务重启失败。请检查配置或应用日志。"
+        printf '%s\n' "${restart_message}" >> "$(fnmonitor_log_file)"
+        printf '%s\n' "${restart_message}" > "$(fnmonitor_test_result_file)"
+        if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+            printf '%s\n' "${restart_message}" > "${TRIM_TEMP_LOGFILE}"
+        fi
+    fi
+fi
+
+if [ "${should_test}" = "1" ]; then
+    fnmonitor_send_test_notification "${config_file}" || true
+fi
+
+exit 0

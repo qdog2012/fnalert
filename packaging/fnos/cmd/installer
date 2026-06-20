@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/common"
+
+case "${1:-}" in
+    install_init|install_callback|uninstall_init|uninstall_callback|upgrade_init|upgrade_callback|config_init|config_callback)
+        exec "${SCRIPT_DIR}/${1}"
+        ;;
+    *)
+        fnmonitor_prepare_data_dir
+        exit 0
+        ;;
+esac

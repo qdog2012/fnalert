@@ -1,0 +1,109 @@
+server:
+  listen: ":39187"
+  read_timeout: 5s
+  write_timeout: 10s
+
+collect:
+  interval: 30s
+  notify_cooldown: 10m
+  disk_mounts: []
+  ignore_filesystems:
+    - tmpfs
+    - devtmpfs
+    - overlay
+    - squashfs
+    - proc
+    - sysfs
+    - cgroup
+    - cgroup2
+    - fusectl
+    - tracefs
+    - debugfs
+
+logs:
+  max_lines: 300
+  include_dmesg: true
+  include_journal: true
+  files:
+    - name: syslog
+      path: /var/log/syslog
+      enabled: true
+    - name: messages
+      path: /var/log/messages
+      enabled: true
+    - name: kernel
+      path: /var/log/kern.log
+      enabled: true
+    - name: auth
+      path: /var/log/auth.log
+      enabled: true
+  # 日志告警最低级别：info、warning、error、critical、none。
+  notify_min_level: warning
+  error_patterns:
+    - "(?i)\\berror\\b"
+    - "(?i)\\bfailed\\b"
+    - "(?i)\\bcritical\\b"
+    - "(?i)\\bpanic\\b"
+    - "(?i)\\bout of memory\\b"
+    - "(?i)\\bio error\\b"
+    - "(?i)\\bsmart.*fail"
+    - "(?i)\\bmdadm.*degrad"
+
+thresholds:
+  cpu_percent: 90
+  load1_per_cpu: 2.0
+  memory_percent: 90
+  # 设置为 0 可关闭 Swap 告警；Linux 长时间占用 Swap 但无 si/so 换入换出时通常不需要告警。
+  swap_percent: 98
+  disk_percent: 85
+  disk_inode_percent: 85
+  temperature_c: 75
+  process_count: 1200
+  network_rx_mbps: 0
+  network_tx_mbps: 0
+  log_match_count: 1
+
+notify:
+  enabled: true
+  channels:
+    stdout:
+      enabled: true
+    # 使用飞牛/fnOS 系统已有邮件配置：把告警交给本机命令或本机 HTTP 入口。
+    # 官方公开文档只描述“系统设置 -> 通知设置”里的授权配置，没有稳定公开发送 API。
+    # 如果你的 fnOS 版本提供本机发送命令或接口，或你自己写了转发脚本，在这里填入即可。
+    fnos_email:
+      enabled: false
+      mode: command
+      timeout: 15s
+      command: ""
+      args:
+        - "--to"
+        - "admin@example.com"
+        - "--subject"
+        - "{{title}}"
+      body_stdin: true
+      http_url: ""
+      http_method: POST
+      http_headers: {}
+    smtp:
+      enabled: false
+      host: smtp.example.com
+      port: 587
+      username: monitor@example.com
+      password: ""
+      password_env: FNMONITOR_SMTP_PASSWORD
+      from: monitor@example.com
+      from_name: fnmonitor
+      to:
+        - admin@example.com
+      # 587 通常使用 start_tls: true；465 通常使用 tls: true 且 start_tls: false。
+      start_tls: true
+      tls: false
+      insecure_skip_verify: false
+    webhook:
+      enabled: false
+      url: https://example.com/notify
+      method: POST
+      timeout: 10s
+      headers:
+        Content-Type: application/json
