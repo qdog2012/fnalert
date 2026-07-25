@@ -296,6 +296,7 @@ fnmonitor_apply_wizard_config_to_file() {
     [ -n "${wizard_disk_percent:-}" ] && fnmonitor_set_threshold "${config_file}" "disk_percent" "${wizard_disk_percent}"
     [ -n "${wizard_temperature_c:-}" ] && fnmonitor_set_threshold "${config_file}" "temperature_c" "${wizard_temperature_c}"
     [ -n "${wizard_process_count:-}" ] && fnmonitor_set_threshold "${config_file}" "process_count" "${wizard_process_count}"
+    [ -n "${wizard_consecutive_trigger_count:-}" ] && fnmonitor_set_threshold "${config_file}" "consecutive_trigger_count" "${wizard_consecutive_trigger_count}"
     [ -n "${wizard_log_match_count:-}" ] && fnmonitor_set_threshold "${config_file}" "log_match_count" "${wizard_log_match_count}"
     [ -n "${wizard_log_notify_min_level:-}" ] && fnmonitor_set_section_key "${config_file}" "logs" "notify_min_level" "$(fnmonitor_yaml_quote "${wizard_log_notify_min_level}")"
 

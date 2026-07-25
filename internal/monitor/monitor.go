@@ -33,6 +33,7 @@ type Monitor struct {
 	mu       sync.RWMutex
 	state    State
 	notified map[string]time.Time
+	triggers map[string]int
 }
 
 func New(cfg config.Config) (*Monitor, error) {
@@ -46,6 +47,7 @@ func New(cfg config.Config) (*Monitor, error) {
 		logs:      logReader,
 		notifier:  notify.New(cfg.Notify),
 		notified:  map[string]time.Time{},
+		triggers:  map[string]int{},
 	}, nil
 }
 
@@ -135,27 +137,54 @@ func (m *Monitor) tickAndLog(ctx context.Context) {
 }
 
 func (m *Monitor) notifyNewAlerts(ctx context.Context, snapshot metrics.Snapshot, events []alert.Event) []notify.Result {
-	if len(events) == 0 {
-		return nil
-	}
-	cooldown := m.cfg.Collect.NotifyCooldown.Duration
-	var pendingEvents []alert.Event
-	m.mu.Lock()
 	now := time.Now()
-	for _, event := range events {
-		if last, ok := m.notified[event.Fingerprint]; ok && cooldown > 0 && now.Sub(last) < cooldown {
-			continue
-		}
-		m.notified[event.Fingerprint] = now
-		pendingEvents = append(pendingEvents, event)
-	}
-	m.mu.Unlock()
+	pendingEvents := m.notificationCandidates(events, now)
 
 	if len(pendingEvents) == 0 {
 		return nil
 	}
 	msg := alertNotificationMessage(snapshot, pendingEvents, now)
 	return m.notifier.Send(ctx, msg)
+}
+
+// notificationCandidates returns alerts which have breached their thresholds for
+// the configured number of consecutive collections and are outside the cooldown.
+// Counters are kept per fingerprint, so one metric recovering does not affect
+// another active metric.
+func (m *Monitor) notificationCandidates(events []alert.Event, now time.Time) []alert.Event {
+	triggerCount := m.cfg.Thresholds.ConsecutiveTriggerCount
+	if triggerCount < 1 {
+		triggerCount = 1
+	}
+	cooldown := m.cfg.Collect.NotifyCooldown.Duration
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	active := make(map[string]struct{}, len(events))
+	pendingEvents := make([]alert.Event, 0, len(events))
+	for _, event := range events {
+		if _, seen := active[event.Fingerprint]; seen {
+			continue
+		}
+		active[event.Fingerprint] = struct{}{}
+		m.triggers[event.Fingerprint]++
+		if m.triggers[event.Fingerprint] < triggerCount {
+			continue
+		}
+		if last, ok := m.notified[event.Fingerprint]; ok && cooldown > 0 && now.Sub(last) < cooldown {
+			continue
+		}
+		m.notified[event.Fingerprint] = now
+		pendingEvents = append(pendingEvents, event)
+	}
+
+	for fingerprint := range m.triggers {
+		if _, stillActive := active[fingerprint]; !stillActive {
+			delete(m.triggers, fingerprint)
+		}
+	}
+	return pendingEvents
 }
 
 func alertNotificationMessage(snapshot metrics.Snapshot, events []alert.Event, now time.Time) notify.Message {

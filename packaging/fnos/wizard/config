@@ -47,6 +47,8 @@
             { "type": "text", "field": "wizard_disk_percent", "label": "磁盘使用率 %", "initValue": "85", "rules": [{ "pattern": "^[0-9]+(\\.[0-9]+)?$", "message": "请输入数字" }] },
             { "type": "text", "field": "wizard_temperature_c", "label": "温度 °C", "initValue": "75", "rules": [{ "pattern": "^[0-9]+(\\.[0-9]+)?$", "message": "请输入数字" }] },
             { "type": "text", "field": "wizard_process_count", "label": "进程数量", "initValue": "1200", "rules": [{ "pattern": "^[0-9]+$", "message": "请输入整数" }] },
+            { "type": "text", "field": "wizard_consecutive_trigger_count", "label": "连续触发次数", "initValue": "1", "rules": [{ "required": true, "message": "请输入连续触发次数" }, { "pattern": "^[1-9][0-9]*$", "message": "请输入大于 0 的整数" }] },
+            { "type": "tips", "helpText": "同一指标连续超过阈值达到此次数后才发送告警；任一轮恢复正常即重新计数。默认 1 表示首次触发即发送。" },
             {
                 "type": "radio",
                 "field": "wizard_log_notify_min_level",

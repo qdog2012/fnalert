@@ -86,17 +86,18 @@ type LogFileConfig struct {
 }
 
 type ThresholdConfig struct {
-	CPUPercent       float64 `yaml:"cpu_percent" json:"cpu_percent"`
-	Load1PerCPU      float64 `yaml:"load1_per_cpu" json:"load1_per_cpu"`
-	MemoryPercent    float64 `yaml:"memory_percent" json:"memory_percent"`
-	SwapPercent      float64 `yaml:"swap_percent" json:"swap_percent"`
-	DiskPercent      float64 `yaml:"disk_percent" json:"disk_percent"`
-	DiskInodePercent float64 `yaml:"disk_inode_percent" json:"disk_inode_percent"`
-	TemperatureC     float64 `yaml:"temperature_c" json:"temperature_c"`
-	ProcessCount     int     `yaml:"process_count" json:"process_count"`
-	NetworkRxMbps    float64 `yaml:"network_rx_mbps" json:"network_rx_mbps"`
-	NetworkTxMbps    float64 `yaml:"network_tx_mbps" json:"network_tx_mbps"`
-	LogMatchCount    int     `yaml:"log_match_count" json:"log_match_count"`
+	CPUPercent              float64 `yaml:"cpu_percent" json:"cpu_percent"`
+	Load1PerCPU             float64 `yaml:"load1_per_cpu" json:"load1_per_cpu"`
+	MemoryPercent           float64 `yaml:"memory_percent" json:"memory_percent"`
+	SwapPercent             float64 `yaml:"swap_percent" json:"swap_percent"`
+	DiskPercent             float64 `yaml:"disk_percent" json:"disk_percent"`
+	DiskInodePercent        float64 `yaml:"disk_inode_percent" json:"disk_inode_percent"`
+	TemperatureC            float64 `yaml:"temperature_c" json:"temperature_c"`
+	ProcessCount            int     `yaml:"process_count" json:"process_count"`
+	NetworkRxMbps           float64 `yaml:"network_rx_mbps" json:"network_rx_mbps"`
+	NetworkTxMbps           float64 `yaml:"network_tx_mbps" json:"network_tx_mbps"`
+	LogMatchCount           int     `yaml:"log_match_count" json:"log_match_count"`
+	ConsecutiveTriggerCount int     `yaml:"consecutive_trigger_count" json:"consecutive_trigger_count"`
 }
 
 type NotifyRootConfig struct {
@@ -183,15 +184,16 @@ func Default() Config {
 			},
 		},
 		Thresholds: ThresholdConfig{
-			CPUPercent:       90,
-			Load1PerCPU:      2,
-			MemoryPercent:    90,
-			SwapPercent:      98,
-			DiskPercent:      85,
-			DiskInodePercent: 85,
-			TemperatureC:     75,
-			ProcessCount:     1200,
-			LogMatchCount:    1,
+			CPUPercent:              90,
+			Load1PerCPU:             2,
+			MemoryPercent:           90,
+			SwapPercent:             98,
+			DiskPercent:             85,
+			DiskInodePercent:        85,
+			TemperatureC:            75,
+			ProcessCount:            1200,
+			LogMatchCount:           1,
+			ConsecutiveTriggerCount: 1,
 		},
 		Notify: NotifyRootConfig{
 			Enabled: true,
@@ -239,6 +241,9 @@ func (c Config) Validate() error {
 	}
 	if c.Collect.NotifyCooldown.Duration < 0 {
 		return errors.New("collect.notify_cooldown cannot be negative")
+	}
+	if c.Thresholds.ConsecutiveTriggerCount <= 0 {
+		return errors.New("thresholds.consecutive_trigger_count must be greater than zero")
 	}
 	if c.Logs.MaxLines <= 0 {
 		return errors.New("logs.max_lines must be greater than zero")

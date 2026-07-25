@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fnmonitor/internal/alert"
+	"fnmonitor/internal/config"
 	"fnmonitor/internal/metrics"
 )
 
@@ -42,5 +43,56 @@ func TestAlertNotificationMessageCombinesMultipleEvents(t *testing.T) {
 	}
 	if msg.Labels["alert_count"] != "2" {
 		t.Fatalf("alert_count label = %q", msg.Labels["alert_count"])
+	}
+}
+
+func TestNotificationCandidatesRequireConsecutiveTriggers(t *testing.T) {
+	m := &Monitor{
+		cfg: config.Config{
+			Thresholds: config.ThresholdConfig{ConsecutiveTriggerCount: 3},
+		},
+		notified: map[string]time.Time{},
+		triggers: map[string]int{},
+	}
+	cpu := alert.Event{Fingerprint: "metric:cpu"}
+	memory := alert.Event{Fingerprint: "metric:memory"}
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+
+	if got := m.notificationCandidates([]alert.Event{cpu}, now); len(got) != 0 {
+		t.Fatalf("first trigger candidates = %v, want none", got)
+	}
+	if got := m.notificationCandidates([]alert.Event{cpu, memory}, now.Add(time.Minute)); len(got) != 0 {
+		t.Fatalf("second trigger candidates = %v, want none", got)
+	}
+	got := m.notificationCandidates([]alert.Event{cpu, memory}, now.Add(2*time.Minute))
+	if len(got) != 1 || got[0].Fingerprint != cpu.Fingerprint {
+		t.Fatalf("third trigger candidates = %v, want only CPU", got)
+	}
+	got = m.notificationCandidates([]alert.Event{memory}, now.Add(3*time.Minute))
+	if len(got) != 1 || got[0].Fingerprint != memory.Fingerprint {
+		t.Fatalf("fourth trigger candidates = %v, want only memory", got)
+	}
+}
+
+func TestNotificationCandidatesResetWhenMetricRecovers(t *testing.T) {
+	m := &Monitor{
+		cfg: config.Config{
+			Thresholds: config.ThresholdConfig{ConsecutiveTriggerCount: 3},
+		},
+		notified: map[string]time.Time{},
+		triggers: map[string]int{},
+	}
+	event := alert.Event{Fingerprint: "metric:cpu"}
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+
+	m.notificationCandidates([]alert.Event{event}, now)
+	m.notificationCandidates(nil, now.Add(time.Minute))
+	for i := 0; i < 2; i++ {
+		if got := m.notificationCandidates([]alert.Event{event}, now.Add(time.Duration(i+2)*time.Minute)); len(got) != 0 {
+			t.Fatalf("trigger %d after recovery candidates = %v, want none", i+1, got)
+		}
+	}
+	if got := m.notificationCandidates([]alert.Event{event}, now.Add(4*time.Minute)); len(got) != 1 {
+		t.Fatalf("third trigger after recovery candidates = %v, want one event", got)
 	}
 }
