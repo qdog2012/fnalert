@@ -96,3 +96,25 @@ func TestNotificationCandidatesResetWhenMetricRecovers(t *testing.T) {
 		t.Fatalf("third trigger after recovery candidates = %v, want one event", got)
 	}
 }
+
+func TestLifecycleNotificationMessage(t *testing.T) {
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	boot := lifecycleNotificationMessage("boot", "fnos-test", now)
+	if boot.Title != "fnmonitor 开机通知" || boot.Severity != "info" {
+		t.Fatalf("boot notification = %#v", boot)
+	}
+	if boot.Labels["event"] != "boot" || boot.Labels["host"] != "fnos-test" {
+		t.Fatalf("boot labels = %#v", boot.Labels)
+	}
+	if !strings.Contains(boot.Body, "服务已启动") {
+		t.Fatalf("boot body = %q", boot.Body)
+	}
+
+	shutdown := lifecycleNotificationMessage("shutdown", "fnos-test", now)
+	if shutdown.Title != "fnmonitor 关机通知" || shutdown.Labels["event"] != "shutdown" {
+		t.Fatalf("shutdown notification = %#v", shutdown)
+	}
+	if !strings.Contains(shutdown.Body, "服务正在停止") {
+		t.Fatalf("shutdown body = %q", shutdown.Body)
+	}
+}

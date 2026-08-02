@@ -35,6 +35,30 @@
                     { "required": true, "message": "请输入通知冷却时间，例如 10m" },
                     { "pattern": "^[0-9]+(s|m|h)$", "message": "格式示例：30s、10m、1h" }
                 ]
+            },
+            {
+                "type": "radio",
+                "field": "wizard_boot_enabled",
+                "label": "开机通知",
+                "initValue": "false",
+                "options": [
+                    { "label": "关闭", "value": "false" },
+                    { "label": "开启", "value": "true" }
+                ]
+            },
+            {
+                "type": "radio",
+                "field": "wizard_shutdown_enabled",
+                "label": "关机通知",
+                "initValue": "false",
+                "options": [
+                    { "label": "关闭", "value": "false" },
+                    { "label": "开启", "value": "true" }
+                ]
+            },
+            {
+                "type": "tips",
+                "helpText": "开机通知会在 fnmonitor 服务启动时发送，关机通知会在服务正常停止时发送；设备异常断电时无法保证发送关机通知。"
             }
         ]
     },

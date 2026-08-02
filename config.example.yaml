@@ -67,6 +67,10 @@ thresholds:
 
 notify:
   enabled: true
+  # 服务启动时发送开机通知；设备正常开机后启动服务时同样会触发。
+  boot_enabled: false
+  # 服务收到终止信号时发送关机通知；异常断电无法保证发送成功。
+  shutdown_enabled: false
   channels:
     stdout:
       enabled: true

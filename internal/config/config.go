@@ -101,8 +101,10 @@ type ThresholdConfig struct {
 }
 
 type NotifyRootConfig struct {
-	Enabled  bool                 `yaml:"enabled" json:"enabled"`
-	Channels NotifyChannelsConfig `yaml:"channels" json:"channels"`
+	Enabled         bool                 `yaml:"enabled" json:"enabled"`
+	BootEnabled     bool                 `yaml:"boot_enabled" json:"boot_enabled"`
+	ShutdownEnabled bool                 `yaml:"shutdown_enabled" json:"shutdown_enabled"`
+	Channels        NotifyChannelsConfig `yaml:"channels" json:"channels"`
 }
 
 type NotifyChannelsConfig struct {
@@ -196,7 +198,9 @@ func Default() Config {
 			ConsecutiveTriggerCount: 1,
 		},
 		Notify: NotifyRootConfig{
-			Enabled: true,
+			Enabled:         true,
+			BootEnabled:     false,
+			ShutdownEnabled: false,
 			Channels: NotifyChannelsConfig{
 				Stdout: StdoutNotifyConfig{Enabled: true},
 				FNOSEmail: FNOSEmailNotifyConfig{

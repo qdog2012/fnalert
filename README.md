@@ -38,7 +38,7 @@ go run ./cmd/fnmonitor -config config.example.yaml -test-notify
 默认输出：
 
 ```bash
-dist/fnmonitor_0.1.15_x86.fpk
+dist/fnmonitor_0.1.16_x86.fpk
 ```
 
 可用环境变量覆盖版本、平台和端口：
@@ -55,6 +55,8 @@ Swap 默认告警阈值为 `98%`。如果 Linux 长时间占用 Swap 但系统�
 日志通知默认规则：系统日志过滤级别为“警告及以上”，即 `warning`、`error`、`critical` 会触发；也可改为全部日志、错误及以上、严重错误或关闭日志告警。异常关键字匹配按 `error` 级别处理。飞牛配置表单中的“日志告警触发条数”默认为 `1`，设置为 `0` 也可关闭日志触发通知。同类日志通知仍受“通知冷却”限制。
 
 `thresholds.consecutive_trigger_count` 控制同一指标连续超过阈值多少次后才发送通知，默认 `1`，即保持首次越阈立即通知。设为 `3` 时，某个指标须连续 3 次采集越阈才会通知；中间任一轮恢复正常则重新计数。达到次数后的重复通知仍受 `collect.notify_cooldown` 限制。
+
+`notify.boot_enabled` 和 `notify.shutdown_enabled` 分别控制开机、关机通知，默认都为 `false`。开机通知在 fnmonitor 服务启动时发送，关机通知在服务收到正常终止信号时发送，因此设备正常开关机和手动启停服务都会触发；异常断电无法保证发送关机通知。
 
 ## 飞牛系统邮件集成
 

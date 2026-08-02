@@ -289,6 +289,8 @@ fnmonitor_apply_wizard_config_to_file() {
     [ -n "${wizard_port:-}" ] && fnmonitor_patch_config_port "${config_file}"
     [ -n "${wizard_collect_interval:-}" ] && fnmonitor_set_section_key "${config_file}" "collect" "interval" "${wizard_collect_interval}"
     [ -n "${wizard_notify_cooldown:-}" ] && fnmonitor_set_section_key "${config_file}" "collect" "notify_cooldown" "${wizard_notify_cooldown}"
+    [ -n "${wizard_boot_enabled:-}" ] && fnmonitor_set_section_key "${config_file}" "notify" "boot_enabled" "$(fnmonitor_bool "${wizard_boot_enabled}")"
+    [ -n "${wizard_shutdown_enabled:-}" ] && fnmonitor_set_section_key "${config_file}" "notify" "shutdown_enabled" "$(fnmonitor_bool "${wizard_shutdown_enabled}")"
 
     [ -n "${wizard_cpu_percent:-}" ] && fnmonitor_set_threshold "${config_file}" "cpu_percent" "${wizard_cpu_percent}"
     [ -n "${wizard_memory_percent:-}" ] && fnmonitor_set_threshold "${config_file}" "memory_percent" "${wizard_memory_percent}"

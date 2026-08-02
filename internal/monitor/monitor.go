@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -122,6 +123,20 @@ func (m *Monitor) SendTest(ctx context.Context) []notify.Result {
 		Time:     time.Now(),
 	}
 	return m.notifier.Send(ctx, msg)
+}
+
+func (m *Monitor) SendBootNotification(ctx context.Context) []notify.Result {
+	if !m.cfg.Notify.BootEnabled {
+		return nil
+	}
+	return m.notifier.Send(ctx, lifecycleNotificationMessage("boot", hostname(), time.Now()))
+}
+
+func (m *Monitor) SendShutdownNotification(ctx context.Context) []notify.Result {
+	if !m.cfg.Notify.ShutdownEnabled {
+		return nil
+	}
+	return m.notifier.Send(ctx, lifecycleNotificationMessage("shutdown", hostname(), time.Now()))
 }
 
 func (m *Monitor) tickAndLog(ctx context.Context) {
@@ -278,4 +293,33 @@ func mergeLabels(a map[string]string, b map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func lifecycleNotificationMessage(event, host string, now time.Time) notify.Message {
+	title := "fnmonitor 开机通知"
+	body := "fnmonitor 服务已启动。"
+	if event == "shutdown" {
+		title = "fnmonitor 关机通知"
+		body = "fnmonitor 服务正在停止。"
+	}
+	labels := map[string]string{"event": event}
+	if host != "" {
+		labels["host"] = host
+		body += "\nHost: " + host
+	}
+	return notify.Message{
+		Title:    title,
+		Body:     body,
+		Severity: "info",
+		Labels:   labels,
+		Time:     now,
+	}
+}
+
+func hostname() string {
+	host, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return host
 }

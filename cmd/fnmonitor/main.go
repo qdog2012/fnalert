@@ -62,6 +62,12 @@ func main() {
 	}
 
 	go mon.Run(ctx)
+	go func() {
+		results := mon.SendBootNotification(ctx)
+		if len(results) > 0 {
+			slog.Info("boot notification sent", "results", results)
+		}
+	}()
 
 	testResultPath := os.Getenv("FNMONITOR_TEST_RESULT_FILE")
 	if testResultPath == "" && *configPath != "" {
@@ -70,6 +76,12 @@ func main() {
 	srv := server.New(cfg.Server, mon, testResultPath)
 	go func() {
 		<-ctx.Done()
+		notifyCtx, notifyCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		results := mon.SendShutdownNotification(notifyCtx)
+		notifyCancel()
+		if len(results) > 0 {
+			slog.Info("shutdown notification sent", "results", results)
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
