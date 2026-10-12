@@ -3,6 +3,11 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -16,13 +21,18 @@ jobs:
           cache: true
       - name: Test
         run: go test ./...
+      - name: Resolve version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "RELEASE_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          else
+            version=$(sed -n 's/^VERSION="${VERSION:-\([^}]*\)}"/\1/p' scripts/build-fnos-fpk.sh)
+            echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
+          fi
       - name: Build fnOS package
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: VERSION="${RELEASE_TAG#v}" bash scripts/build-fnos-fpk.sh
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh release create "$RELEASE_TAG" dist/*.fpk --verify-tag --title "fnmonitor ${RELEASE_TAG#v}" --notes-file .github/release-notes.md
