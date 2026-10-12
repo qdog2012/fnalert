@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="${APP_NAME:-fnmonitor}"
 DISPLAY_NAME="${DISPLAY_NAME:-飞牛系统监控}"
-VERSION="${VERSION:-0.1.16}"
+VERSION="${VERSION:-0.1.17}"
 PLATFORM="${PLATFORM:-x86}"
 PORT="${PORT:-39187}"
 

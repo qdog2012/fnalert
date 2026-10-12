@@ -62,7 +62,7 @@ thresholds:
   network_rx_mbps: 0
   network_tx_mbps: 0
   log_match_count: 1
-  # 同一指标连续超过阈值的采集次数达到该值后才发送告警；1 表示首次触发即发送。
+  # 同一指标连续异常或连续恢复的采集次数达到该值后才发送对应通知；1 表示首次即发送。
   consecutive_trigger_count: 1
 
 notify:

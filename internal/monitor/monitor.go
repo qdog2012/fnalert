@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +32,12 @@ type Monitor struct {
 	logs      *logs.Reader
 	notifier  *notify.Manager
 
-	mu       sync.RWMutex
-	state    State
-	notified map[string]time.Time
-	triggers map[string]int
+	mu         sync.RWMutex
+	state      State
+	notified   map[string]time.Time
+	triggers   map[string]int
+	alerted    map[string]alert.Event
+	recoveries map[string]int
 }
 
 func New(cfg config.Config) (*Monitor, error) {
@@ -153,20 +156,24 @@ func (m *Monitor) tickAndLog(ctx context.Context) {
 
 func (m *Monitor) notifyNewAlerts(ctx context.Context, snapshot metrics.Snapshot, events []alert.Event) []notify.Result {
 	now := time.Now()
-	pendingEvents := m.notificationCandidates(events, now)
+	pendingEvents, recoveredEvents := m.notificationCandidates(events, now)
 
-	if len(pendingEvents) == 0 {
-		return nil
+	var results []notify.Result
+	if len(pendingEvents) > 0 {
+		results = append(results, m.notifier.Send(ctx, alertNotificationMessage(snapshot, pendingEvents, now))...)
 	}
-	msg := alertNotificationMessage(snapshot, pendingEvents, now)
-	return m.notifier.Send(ctx, msg)
+	if len(recoveredEvents) > 0 {
+		results = append(results, m.notifier.Send(ctx, recoveryNotificationMessage(snapshot, recoveredEvents, now))...)
+	}
+	return results
 }
 
-// notificationCandidates returns alerts which have breached their thresholds for
-// the configured number of consecutive collections and are outside the cooldown.
+// notificationCandidates returns new alerts outside the cooldown and previously
+// notified alerts that have stayed normal for the same consecutive count.
+// Confirmed recovery also clears the incident cooldown.
 // Counters are kept per fingerprint, so one metric recovering does not affect
 // another active metric.
-func (m *Monitor) notificationCandidates(events []alert.Event, now time.Time) []alert.Event {
+func (m *Monitor) notificationCandidates(events []alert.Event, now time.Time) ([]alert.Event, []alert.Event) {
 	triggerCount := m.cfg.Thresholds.ConsecutiveTriggerCount
 	if triggerCount < 1 {
 		triggerCount = 1
@@ -176,6 +183,12 @@ func (m *Monitor) notificationCandidates(events []alert.Event, now time.Time) []
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.alerted == nil {
+		m.alerted = make(map[string]alert.Event)
+	}
+	if m.recoveries == nil {
+		m.recoveries = make(map[string]int)
+	}
 	active := make(map[string]struct{}, len(events))
 	pendingEvents := make([]alert.Event, 0, len(events))
 	for _, event := range events {
@@ -183,6 +196,7 @@ func (m *Monitor) notificationCandidates(events []alert.Event, now time.Time) []
 			continue
 		}
 		active[event.Fingerprint] = struct{}{}
+		delete(m.recoveries, event.Fingerprint)
 		m.triggers[event.Fingerprint]++
 		if m.triggers[event.Fingerprint] < triggerCount {
 			continue
@@ -190,6 +204,7 @@ func (m *Monitor) notificationCandidates(events []alert.Event, now time.Time) []
 		if last, ok := m.notified[event.Fingerprint]; ok && cooldown > 0 && now.Sub(last) < cooldown {
 			continue
 		}
+		m.alerted[event.Fingerprint] = event
 		m.notified[event.Fingerprint] = now
 		pendingEvents = append(pendingEvents, event)
 	}
@@ -199,7 +214,34 @@ func (m *Monitor) notificationCandidates(events []alert.Event, now time.Time) []
 			delete(m.triggers, fingerprint)
 		}
 	}
-	return pendingEvents
+	recoveredEvents := make([]alert.Event, 0)
+	for fingerprint, event := range m.alerted {
+		if _, stillActive := active[fingerprint]; !stillActive {
+			m.recoveries[fingerprint]++
+			if m.recoveries[fingerprint] < triggerCount {
+				continue
+			}
+			delete(m.recoveries, fingerprint)
+			recoveredEvents = append(recoveredEvents, event)
+			delete(m.alerted, fingerprint)
+			delete(m.notified, fingerprint)
+		}
+	}
+	sort.Slice(recoveredEvents, func(i, j int) bool { return recoveredEvents[i].Fingerprint < recoveredEvents[j].Fingerprint })
+	return pendingEvents, recoveredEvents
+}
+
+func recoveryNotificationMessage(snapshot metrics.Snapshot, events []alert.Event, now time.Time) notify.Message {
+	parts := []string{fmt.Sprintf("本轮采集有 %d 个告警已恢复，当前不再满足告警条件。", len(events)), "", "Host: " + snapshot.Host.Hostname, "Time: " + now.Format(time.RFC3339)}
+	for i, event := range events {
+		parts = append(parts, fmt.Sprintf("%d. %s 已恢复", i+1, event.Title), "   Fingerprint: "+event.Fingerprint, "   原告警: "+event.Message)
+	}
+	labels := map[string]string{"host": snapshot.Host.Hostname, "event": "recovery", "recovery_count": fmt.Sprint(len(events))}
+	if len(events) == 1 {
+		labels = mergeLabels(events[0].Labels, labels)
+		labels["fingerprint"] = events[0].Fingerprint
+	}
+	return notify.Message{Title: fmt.Sprintf("fnmonitor 恢复通知：%d 个告警已恢复", len(events)), Body: strings.Join(parts, "\n"), Severity: "info", Labels: labels, Time: now}
 }
 
 func alertNotificationMessage(snapshot metrics.Snapshot, events []alert.Event, now time.Time) notify.Message {

@@ -38,7 +38,7 @@ go run ./cmd/fnmonitor -config config.example.yaml -test-notify
 默认输出：
 
 ```bash
-dist/fnmonitor_0.1.16_x86.fpk
+dist/fnmonitor_0.1.17_x86.fpk
 ```
 
 可用环境变量覆盖版本、平台和端口：
@@ -72,3 +72,5 @@ fnOS 的公开帮助文档说明了在系统设置中配置 SMTP 授权，但未
 - 用 root 或具备日志读取权限的用户运行，否则 `journalctl`、`dmesg`、部分 `/var/log/*` 可能读取失败。
 - 将 `config.example.yaml` 复制为生产配置，设置通知渠道和阈值。
 - 用 systemd 管理服务，并限制配置文件权限，特别是独立 SMTP 密码环境变量。
+
+已触发通知的告警须连续正常达到 `thresholds.consecutive_trigger_count` 次后，才会通过已有通知渠道发送一次 info 级别恢复通知。恢复通知不受通知冷却限制；中途再次异常会重置恢复计数。同轮恢复的告警合并发送；恢复后再次异常会重新计数并触发通知。未达到连续触发次数的短暂异常不会发送恢复通知。
